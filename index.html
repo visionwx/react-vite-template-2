@@ -1,6 +1,106 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.13/html-to-image.min.js"></script>
+    <script>(function() {
+      if (window.self === window.top) {
+          return;
+      }
+  
+      const originalConsole = window.console;
+      window.console = {
+        log: (...args) => {
+          originalConsole.log(...args);
+          window.parent.postMessage({ type: 'console', message: args.join(' '), level: 'log' }, '*');
+        },
+        error: (...args) => {
+          originalConsole.error(...args);
+          window.parent.postMessage({ type: 'console', message: 'Error: ' + args.join(' '), level: 'error' }, '*');
+        },
+        warn: (...args) => {
+          originalConsole.warn(...args);
+          window.parent.postMessage({ type: 'console', message: 'Warning: ' + args.join(' '), level: 'warn' }, '*');
+        }
+      };
+  
+      let requestId = 0;
+      let callbacksMap = new Map();
+      window.trickle = {
+        complete: (prompt) => {
+          return new Promise((resolve, reject) => {
+            const id = requestId++;
+            callbacksMap.set(id, { resolve, reject });
+            window.parent.postMessage({ type: 'complete', id, prompt }, '*');
+          });
+        }
+      };
+  
+      window.addEventListener('message', async (event) => {
+        if (event.data.type === 'takeScreenshot') {
+          const rootElement = document.getElementById('trickle-artifact-root-html');
+          if (!rootElement) {
+            window.parent.postMessage({
+              type: 'screenshotError',
+              error: new Error('Root element not found'),
+            }, '*');
+          }
+          const screenshot = await htmlToImage.toPng(rootElement, {
+            imagePlaceholder:
+              "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAA1JREFUGFdjePDgwX8ACOQDoNsk0PMAAAAASUVORK5CYII=",
+          });
+          window.parent.postMessage({
+            type: 'screenshotData',
+            data: screenshot,
+          }, '*');
+        } else if (event.data.type === 'complete') {
+          const callback = callbacksMap.get(event.data.id);
+          if (event.data.error) {
+            callback.reject(new Error(event.data.error));
+          } else {
+            callback.resolve(event.data.completion);
+          }
+          callbacksMap.delete(event.data.id);
+        }
+      });
+  
+      window.addEventListener('click', (event) => {
+        const isEl = event.target instanceof HTMLElement;
+        if (!isEl) return;
+  
+        // find ancestor links
+        const linkEl = event.target.closest("a");
+        if (!linkEl || !linkEl.href) return;
+  
+        event.preventDefault();
+        event.stopImmediatePropagation();
+  
+        let linkUrl;
+        try {
+          linkUrl = new URL(linkEl.href);
+        } catch (error) {
+          return;
+        }
+  
+        if (linkUrl.hostname === window.location.hostname) return;
+  
+        window.parent.postMessage({
+          type: 'openExternal',
+          href: linkEl.href,
+        }, '*');
+    });
+  
+      const originalOpen = window.open;
+      window.open = function (url) {
+        window.parent.postMessage({
+          type: "openExternal",
+          href: url,
+        }, "*");
+      };
+  
+      window.addEventListener('error', (event) => {
+        window.parent.postMessage({ type: 'console', message: 'Uncaught Error: ' + event.message, level: 'error' }, '*');
+      });
+    })();</script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>trickle-demo</title>
@@ -17,7 +117,7 @@
     <meta name="twitter:image" content="https://resource.trickle.so/public/og_image.jpg" />
   </head>
 
-  <body>
+  <body id="trickle-artifact-root-html">
     <div id="root"></div>
     <!-- IMPORTANT: DO NOT REMOVE THIS SCRIPT TAG OR THIS VERY COMMENT! -->
     <script type="module" src="/src/main.tsx"></script>
