@@ -20,6 +20,10 @@
         warn: (...args) => {
           originalConsole.warn(...args);
           window.parent.postMessage({ type: 'console', message: 'Warning: ' + args.join(' '), level: 'warn' }, '*');
+        },
+        debug: (...args) => {
+          originalConsole.debug(...args);
+          window.parent.postMessage({ type: 'console', message: 'Debug: ' + args.join(' '), level: 'debug' }, '*');
         }
       };
   
